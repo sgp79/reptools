@@ -1,0 +1,16 @@
+# Include the README
+include *.md
+
+# Include the license file
+include LICENSE.txt
+
+# Include the data files
+recursive-include data *
+
+# Include CHANGES file
+
+include CHANGES*
+
+#excludes
+exclude pipeline*
+exclude test*
