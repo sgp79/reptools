@@ -1,3 +1,10 @@
+v0.16.7
+    10th September 2021
+    Added --C103db_length option to allow the length of the 3' region of V genes used for C103 alignments to be changed
+    from the default of 30.  It is hoped that this will be useful in chicken Ig CDR3 extraction, which wasn't working.
+v0.16.6.1
+    1st Septmeber 2021
+    Bugfix: Supplying aligner parameters at the commandline rasied an error.
 v0.16.6
     26th January 2021
     New feature/workaround: switch to force makeblastdb to create a BLAST v4 database, rather than the default v5.

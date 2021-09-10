@@ -166,6 +166,12 @@ def parse_args():
                                     'errors, according to their qual string.'
                             )
     optionalArgs.add_argument(
+                               '--C103db_length', type=int, default=30, dest='C103db_length',
+                               help="For CDR3 identification, the 5' ends of the supplied V genes are trimmed, to leave"
+                               " only this number of nt (the 3' end).  Defaults to 30, but higher values may be "
+                               "required, especially for genes with gene conversion and/or hypermutation."
+                            )
+    optionalArgs.add_argument(
                                '--titleFormat', default = 'clusterID|readID', dest='title_format',
                                help='Paired file integrity checks depend on the fastq title line format. The default '
                                     'is "clusterID|readID", which adequately represents illumina output.  For '
@@ -516,7 +522,7 @@ def parse_args():
 
 def parse_gene_setting(arg,argname,valid_keys,fun):
     if arg: #if it's False (the default), leave as False
-        split_list = [i.split('=') for i in args.mincols]
+        split_list = [i.split('=') for i in arg]
         arg = {i[0]:fun(i[1]) for i in split_list}
         for k in arg:
             if k not in valid_keys:
@@ -583,7 +589,7 @@ def main():
                                     aligner_paths = args.aligner_paths,
                                     adapters = args.adapters,
                                     threads = args.threads,
-                                    Vdb_length = 30,
+                                    Vdb_length = args.C103db_length,
                                     tiebreaker = args.tiebreaker,
                                     overwrite = args.overwrite,
                                     clusterID_position = args.clusterID_position,
@@ -717,7 +723,7 @@ def main():
                                                     aligner_paths = args.aligner_paths,
                                                     adapters = args.adapters,
                                                     threads = args.threads,
-                                                    Vdb_length = 30,
+                                                    Vdb_length = args.C103db_length,
                                                     tiebreaker = args.tiebreaker,
                                                     clusterID_position = args.clusterID_position,
                                                     blastdb_version=args.blastdb_version
