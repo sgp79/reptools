@@ -1,0 +1,31 @@
+Reptools database files.
+
+Reptools needs to know the V, J and C segment nucleotide sequences to search for, as well as the position of the first base coding for the conserved residue at the start of the CDR3 in the V segments (this is the CYS 104 residue in IMGT nomenclature) and the position of the first base coding for the conserved residue at the end of the CDR3 in the J segments (this is the PHE 118 or TRP 118 residue in IMGT nomenclature).  This is achieved by supplying a FASTA file for each gene segment type (V, J and C), and a single gene dictionary in CSV format.
+
+1. The nucleotide sequences themselves should be supplied in standard FASTA format.
+One file should be supplied for each gene segment (i.e. one file with V sequences, one with J sequences, and one with C sequences).  The sequences should be ungapped, contain only C, G, T and A characters, and give the coding strand.  We recommend that FASTA title lines avoid using spaces, to reduce the chances of unintended behaviour.
+
+2. The positions of the anchor residues is given in a single "gene dictionary" CSV format file with the following features:
+The first line is a title line, giving column headings as listed below.
+Each row gives information about one sequence in one of the supplied FASTA files.
+The following columns are required (their order is not important):
+    Sequence
+        - the name of a sequence as given in the title line in the supplied FASTA file for this gene segment
+    Gene
+        - the name of the gene segment this sequence represents.  It is possible to supply multiple sequences for the same gene segment (for example to represent different alleles or transcript variants).
+    Family
+        - the name of the subfamily to which this gene belong (e.g. TRBV1, TRBV1).  If the gene segment in question is not divided into subfamilies, this column may contain the same value as the Gene column.
+    Type
+        - the type of gene segment this sequence represents: must contain a single uppercase character: V, J or C.
+
+The following columns are optional, but are required for CDR3 extraction:
+    C104
+        - the position of the first base of the CYS 104 residue in the supplied FASTA sequence, starting numbering from 1 (in other words, do NOT use C-style zero-based numbering).  In non-V segment rows, this value should be left blank.
+    F118
+        - the position of the first base of the PHE 118 or TRP 118 residue in the supplied FASTA sequence, starting numbering from 1 (in other words, do NOT use C-style zero-based numbering).  In non-J segment rows, this value should be left blank.
+        
+The following columns will be processed, but are not used in the current version of reptools:
+    Pseudo
+    ATG
+    Vstart
+    
