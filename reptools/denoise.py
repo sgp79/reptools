@@ -6,66 +6,38 @@ import os
 import tempfile
 import reptools
 
-#seqlens = False #if False, process all
-#weight_by_qual = True
-#threshold = 10
-#indel_threshold = 100
-#infile = 'C:/Users/Stephen Preston/Sync/TCRSeq data/MiSeq48/RD13_Lib4/CDR3/56.fastq'
-#FASTQout = False
-#FASTAout = False
-#change_logs = False
-#outdir = False
-
-#seqs_np,gene_ids_sets = denoise(infile,change_logs=None,seqlens=[58,59,60])
-#denoise(infile,change_logs=False,seqlens=[58,59,60])
-#denoise(infile,change_logs=False)
-
-def denoise_dir(
-    indir,
-    outdir = False,
+def denoise_filelist(
+    infiles,
+    outdir,
     weight_by_qual = True,
     threshold = 10,
     indel_threshold = 100,
     FASTQout_dir = None,
-    #FASTAout_dir = False,
     subs = True,
     indels = True,
     deambig = True,
     filetype = 'fastq',
     overwrite = False
     ):
-    
     filetypes = reptools.select_filetypes(filetype)
     infiles=[fn for fn in os.listdir(indir) if os.path.splitext(fn.lower())[1] in filetypes]
-    
+    #line above does a primitive filetype check.  Want to add a proper check on each file (structure, not ext)
     if len(infiles)==0:
-        print('No fastq files found.\n')
-        return
+        raise IOError('No fastq files found.\n')
     
-    if not outdir:
-        outdir = indir
+    #make output dir, deleting pre-existing data if overwrite is set
+    reptools.cautious_mkdir(FASTQout_dir,overwrite=overwrite)
     
-    FASTQout_dir,_ = reptools.build_path(True, FASTQout_dir, 'denoisedCDR3', outdir)
-    FASTAout_dir = False
-    #FASTAout_dir = build_path(True, FASTAout_dir, 'denoisedCDR3_fasta', outdir)
-    
-    #make output directory, deleting pre-existing data is overwrite is set
-    for pth in [
-                FASTQout_dir,
-                FASTAout_dir
-                ]:
-        if pth: reptools.reptools.cautious_mkdir(pth,overwrite=overwrite)
-    
+    FASTQoutfiles = []
     for fn in infiles:
         FASTQout = reptools.make_unpaired_filepaths(FASTQout_dir, os.path.splitext(fn)[0])
-        FASTAout = reptools.make_unpaired_filepaths(FASTAout_dir, os.path.splitext(fn)[0],'fas')
-        _ = reptools.denoise_file(
+        outfn = reptools.denoise_file(
                       os.path.join(indir,fn),
                       weight_by_qual = weight_by_qual,
                       threshold = threshold,
                       indel_threshold = indel_threshold,
                       FASTQout = True,
-                      FASTAout = False,
+                      FASTAout = False, #could add in this feature, but probably cleaner to just convert if desired
                       FASTQout_fn = FASTQout,
                       change_logs = False,
                       subs = subs,
@@ -73,8 +45,9 @@ def denoise_dir(
                       deambig = deambig,
                       overwrite = overwrite
                     )[0]
+        FASTQoutfiles.append(outfn)
     
-    return(FASTQout_dir)
+    return(FASTQoutfiles)
 
 
 def denoise_file(

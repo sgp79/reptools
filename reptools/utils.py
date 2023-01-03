@@ -69,52 +69,83 @@ def checkFiletype(infile,extrachars="",return_empty=False):
             if len(row.strip())>0:
                 if not titlefound:
                     if row.strip()[0]=='>':
-                        type='fasta'
+                        ftype='fasta'
                         titlefound=True
                     elif row.strip()[0]=='@':
-                        type='fastq'
+                        ftype='fastq'
                         titlefound=True
                     else:
-                        raise IOError('Not a FASTA or FASTQ file.  Initial character is not @ or >\n')
-                elif type=='fastq' and row.strip().lower()[0] in nuc_chars:
-                        return(type)
-                elif type=='fasta' and row.strip().lower()[0] in nuc_chars+prot_chars:
-                    return(type)
+                        raise IOError(
+                                      '{} is not a FASTA or FASTQ file.  Initial character is not @ or >\n'.format(
+                                                                                                                 infile
+                                                                                                                 )
+                                      )
+                elif ftype=='fastq' and row.strip().lower()[0] in nuc_chars:
+                        return(ftype)
+                elif ftype=='fasta' and row.strip().lower()[0] in nuc_chars+prot_chars:
+                    return(ftype)
                 else:
                     raise IOError(
-                                  'Not a FASTA or FASTQ file.  '
-                                  'Initial character of second (non-empty) line '
-                                  'is not a valid amino acid or nucleotide. \n'
+                                  '{} is not a FASTA or FASTQ file.  '
+                                  'Initial character of second (non-empty) line\n'
+                                  'is not a valid nucleotide (or valid amino acid, for FASTA only)'.format(infile)
                                   )
         if return_empty and titlefound and len(row.strip()==0):
-            return(type)
+            return(ftype)
         
         raise IOError('{} is not a FASTA or FASTQ file, or is empty.\n'.format(infile))
 
 
-def reverse_comp(nucl_as_string,type='DNA'):
-    return(reptools.complement(nucl_as_string,type)[::-1])
+def check_filetypes(
+    fns
+    ):
+    """
+    Takes either a list of filenames, or a list of lists containing filename pairs.
+    Checks that all files are valid FASTQ or FASTA files, and that all files supplied are of the same type.
+    Returns the detected filetype ('fastq' or 'fasta').
+    """
+    #flatten list
+    def flatten(lst):
+        for x in lst:
+            try:
+                yield from flatten(x)
+            except TypeError:
+                yield x
+    
+    fns = list(flatten(fns))
+    ftypes = set()
+    for fn in fns:
+        ftypes.add(checkFiletype(fn))
+        if len(ftypes)>1:
+            raise IOError('File structures matching both FASTQ and FASTA formats were present in input.  Pick one, '
+                          'and only one.')
+    
+    return(ftypes.pop())
 
 
-def complement(nucl_as_string,type='DNA'):
+def reverse_comp(nucl_as_string,ntype='DNA'):
+    return(reptools.complement(nucl_as_string,ntype)[::-1])
+
+
+def complement(nucl_as_string,ntype='DNA'):
     # convert to lower case and trim whitespace at ends, and convert unicode to string
     nucl_as_string = nucl_as_string.lower().strip()
     badchars = dict.fromkeys(string.printable)
     #use translate() to get the characters in all printable characters which aren't in our list
-    if type.upper()=='DNA':
+    if ntype.upper()=='DNA':
         for sym in 'Atagcyrswmkvhdbn.--':
             badchars.pop(sym,None) #remove these from the badchars table 
         transtable = str.maketrans('uatcgryswkmbdhvn.-~','Atagcyrswmkvhdbn.--')
         #translates bases, turns ~ to -, and leaves standard symbols alone.
         #If a u is present, it will be translated to a capital A, to highlight the fact that it shouldn't be present in DNA
-    elif type.upper()=='RNA':
+    elif ntype.upper()=='RNA':
         for sym in 'auAgcyrswmkvhdbn.--':
             badchars.pop(sym,None) #remove these from the badchars table 
         transtable = str.maketrans('uatcgryswkmbdhvn.-~','auAgcyrswmkvhdbn.--')
         #translates bases, turns ~ to -, and leaves standard symbols alone.
         #If a t is present, it will be translated to a capital A, to highlight the fact that it shouldn't be present in RNA
     else:
-        raise ValueError('Unknown nucleic acid: %s' % type)
+        raise ValueError('Unknown nucleic acid: %s' % ntype)
     badchars = {ord(k):v for k,v in badchars.items()} #convert badchars table keys to Unicode points
     translated = nucl_as_string.translate(transtable)
     return(translated.translate(badchars))
@@ -219,13 +250,6 @@ def remove_dir(dirname,recursive=False,remove_if_not_empty=True,silent_fail=Fals
                 raise error
         time.sleep(0.02)
 
-
-def assign_filepairs(typefiles,pairsuffixes):
-    infiles = [os.path.split(fn)[1] for fn in typefiles if os.path.splitext(fn)[0][-len(pairsuffixes[0]):] == pairsuffixes[0]]
-    if len(infiles) != len([os.path.split(fn)[1] for fn in typefiles if os.path.splitext(fn)[0][-len(pairsuffixes[0]):] == pairsuffixes[1]]):
-        raise ValueError('Missing paired read.')
-    pairfiles = {infile:os.path.splitext(infile)[0][:-len(pairsuffixes[0])]+pairsuffixes[1]+os.path.splitext(infile)[1] for infile in infiles}
-    return(pairfiles)
 
 
 def fastqcounter(infile):
@@ -622,7 +646,6 @@ def clean_up_dirs(dir_list):
                 pass
 
 
-
 def removeemptyfile(fn):
     if fn and os.path.getsize(fn)==0:
         os.remove(fn)
@@ -668,7 +691,7 @@ def build_path(selected,selected_dir,default_dir,outdir):
             if it is "False" or "false" or False, return the path to a tempdir
             if it is None, return the supplied default (appended to outdir)
     Always returns a tuple.  The first element is the directory path, or False. The second element is None, unless a 
-    temporary directory has been produced, in which case it also contains the directory path.
+    temporary directory has been produced, in which case both elements contain the path to the temporary directory.
     """
     if not selected:
         return(False,None)

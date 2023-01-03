@@ -4,89 +4,69 @@ import shutil
 import reptools
 import contextlib
 import collections
-from reptools import fill_defaults
+from reptools import fill_defaults, select_filetypes, assign_filepairs, checkFiletype
 from reptools import dummy_context_mgr as dummy
 import errno
 
-def call_dir(
-                indir,
-                dbs,
-                genedictfile,
-                outdir=False,
-                db_dir=False,
-                noCDR3=False,
-                notrim=False,
-                adaptertrimmed_dir=None,
-                adapters=False,
-                hits_dir=None,
-                CDR3_dir=None,
-                Cmiss_dir=False,
-                ChitVmiss_dir=False,
-                ChitVhitJmiss_dir=False,
-                Vsegmentout_dir=False,
-                filetype='fastq',
-                pairsuffixes=('_1','_2'),
-                title_split=' ',
-                overwrite=False,
-                labels=False,
-                mincols=False,
-                id=False,
-                evalue=False,
-                wordlength=False,
-                gapopen=False,
-                gapextend=False,
-                aligners=False,
-                aligner_paths=False,
-                threads=4,
-                Vdb_length=30,
-                tiebreaker = ['evalue','lower'],
-                clusterID_position = 0,
-                blastdb_version=5
-                #reward=1,
-                #penalty=-3,
-                #targetcov=None,
-                #minhsp=False,
-                #xDrop=3,
-                #alphabet='dna5',
-                #numMatches=10,
-                #verbose=True,
-            ):
+def call_pairslist(
+            filepairs,
+            dbs,
+            genedictfile,
+            outdir,
+            db_dir=False,
+            noCDR3=False,
+            notrim=False,
+            adaptertrimmed_dir=None,
+            adapters=False,
+            hits_dir=None,
+            CDR3_dir=None,
+            Cmiss_dir=False,
+            ChitVmiss_dir=False,
+            ChitVhitJmiss_dir=False,
+            Vsegmentout_dir=False,
+            filetype='fastq',
+            pairsuffixes=('_1','_2'),
+            title_split=' ',
+            overwrite=False,
+            labels=False,
+            mincols=False,
+            id=False,
+            evalue=False,
+            wordlength=False,
+            gapopen=False,
+            gapextend=False,
+            aligners=False,
+            aligner_paths=False,
+            threads=4,
+            Vdb_length=30,
+            tiebreaker = ['evalue','lower'],
+            clusterID_position = 0,
+            blastdb_version=5
+            #reward=1, #commented out options are not currently implemented, but could be sent to aligner
+            #penalty=-3,
+            #targetcov=None,
+            #minhsp=False,
+            #xDrop=3,
+            #alphabet='dna5',
+            #numMatches=10,
+            #verbose=True,
+    ):
     tempdirs = []
-    filetypes = reptools.select_filetypes(filetype)
-    typefiles=[fn for fn in os.listdir(indir) if os.path.splitext(fn.lower())[1] in filetypes]
-    if len(typefiles)==0:
-        print('No fastq files found.\n')
-        return
     
-    if not outdir:
-        outdir = indir
+    #########
+    #haven't I done the block below in args?
+    #adaptertrimmed_dir,td = reptools.build_path(not notrim, adaptertrimmed_dir, 'adaptertrimmed', outdir)
+    #tempdirs.append(td)
+    #hits_dir,td = reptools.build_path(True, hits_dir, 'fastq_hits', outdir)
+    #tempdirs.append(td)
+    #CDR3_dir,td = reptools.build_path(not noCDR3, CDR3_dir, 'rawCDR3', outdir)
+    #tempdirs.append(td)
+    #
+    #if not notrim and not adapters:
+    #    raise ValueError('Unless --notrim is set, adapters must be supplied.')
+    ##########
     
-    adaptertrimmed_dir,td = reptools.build_path(not notrim, adaptertrimmed_dir, 'adaptertrimmed', outdir)
-    tempdirs.append(td)
-    hits_dir,td = reptools.build_path(True, hits_dir, 'fastq_hits', outdir)
-    tempdirs.append(td)
-    CDR3_dir,td = reptools.build_path(not noCDR3, CDR3_dir, 'rawCDR3', outdir)
-    tempdirs.append(td)
-    
-    if not notrim and not adapters:
-        raise ValueError('Unless --notrim is set, adapters must be supplied.')
-    
-    pairedfiles = []
-    for suffix in pairsuffixes:
-        pairedfiles.append(sorted([fn for fn in typefiles if os.path.splitext(fn)[0][-len(suffix):]==suffix]))
-    
-    infiles = list(zip(pairedfiles[0],pairedfiles[1]))
-    
-    #integrity check
-    filestems = []
-    for tpl in infiles:
-        if len(set([os.path.splitext(fn)[0][:-len(pairsuffixes[n])] for n,fn in enumerate(tpl)]))>1:
-            raise IOError('Mismatched paired read files(s).')
-        if len([os.path.splitext(fn)[0][:-len(pairsuffixes[n])] for n,fn in enumerate(tpl)])!=len(pairsuffixes):
-            raise IOError('Mismatched paired read files(s).')
-        filestems.append(os.path.splitext(tpl[0])[0][:-len(pairsuffixes[0])])
-    
-    #make output directories, deleting pre-existing data is overwrite is set
+    #make output directories, deleting pre-existing data if overwrite is set
     for pth in [
                 adaptertrimmed_dir,hits_dir,CDR3_dir,
                 Cmiss_dir,ChitVmiss_dir,ChitVhitJmiss_dir,Vsegmentout_dir
@@ -97,10 +77,9 @@ def call_dir(
         dbs = {gene:os.path.join(db_dir,dbs[gene]) for gene in dbs}            
     
     #call
-    for filepair,stem in zip(infiles,filestems):
-        in1=os.path.join(indir,filepair[0])
-        in2=os.path.join(indir,filepair[1])
-        
+    for stem,filepair in filepairs.items():
+        in1=filepair[0]
+        in2=filepair[1]
         adaptertrimmed1,adaptertrimmed2 = reptools.make_paired_filepaths(adaptertrimmed_dir, stem, pairsuffixes)
         outF,outR = reptools.make_paired_filepaths(hits_dir, stem, ['_F','_R'])
         Cmiss1,Cmiss2 = reptools.make_paired_filepaths(Cmiss_dir, stem, pairsuffixes)
@@ -111,8 +90,7 @@ def call_dir(
         outCDR3 = reptools.make_unpaired_filepaths(CDR3_dir, stem)
         
         _ = reptools.call_filepair(
-                    in1=in1,
-                    in2=in2,
+                    in1=in1, in2=in2,
                     dbs=dbs,
                     genedictfile=genedictfile,
                     noCDR3=noCDR3,
@@ -143,7 +121,8 @@ def call_dir(
                     blastdb_version=blastdb_version
                     )
     reptools.clean_up_dirs(tempdirs)
-    return(CDR3_dir)
+    
+    return(outCDR3)
 
 
 def call_filepair(

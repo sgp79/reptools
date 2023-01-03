@@ -1,36 +1,35 @@
 import argparse
 import reptools
 import os
+import sys
 from reptools import build_fn
 from reptools import build_path
-import collections
+import platform
+if platform.system() == 'Windows':
+    from glob import glob
 
+#TODO = sort out help display, which will be odd right now, due to migration from old cli structure
 def parse_args():
     parser = argparse.ArgumentParser(
                          description='\n'
-                          'mode:\n'
-                          '          file  Run on the input file or filepair\n'
-                          '           dir  Run on all fastq files found in the input directory\n'
-                          '                    set flag -r/--recursive to search subdirs.\n'
-                          '\n'
                           'function(s) - enter one or more:\n'
-                          '          call  Call gene segments and extract CDR3 (takes pairs(s) of fastq\n'
+                          '          call  Call gene segments and extract CDR3 (takes paired fastq\n'
                           '                files.  Trims adapters by default.\n'
                           '       denoise  Denoise and dereplicate CDR3 sequences.  If run without\n'
                           '                the call function, takes CDR3 fastq file(s).\n'
                           '      EEfilter  Filter CDR3 sequences by expected error rate.  If run without\n'
-                          '                the denoise function function, takes CDR3 fastq file(s).\n'
-                          '      VDJtools  Output VDJtools format tab-seperated files.  If run alone, takes \n'
-                          '                denoised/dereplicated and segment-labelled CDR3 fastq file(s). \n'
-                          '                If run with other functions, output will be VDJfiles produced \n'
-                          '                by the previous function to be run.\n'
+                          '                the call or denoise function, takes CDR3 fastq file(s).\n'
+                          '      VDJtools  Output VDJtools format tab-seperated files.  If run alone,'
+                          '                takes denoised/dereplicated and segment-labelled CDR3 fastq\n'
+                          'file(s). \n'
                           '\n'
                           'options:\n'
-                          '    -i/--input  Input file/filepair or directory(ies) (required)\n'
-                          '                    - for the call function in file mode, two files must be\n'
-                          '                      supplied (read_1 and its read_2 pair).\n'
-                          '         [...]  Further options:\n'
-                          '                    use "reptools file --help" or "reptools dir --help" to see these\n'
+                          '    -i/--input  Any number of input files (required - wildcards accepted)\n'
+                          '                    - for the call function in file mode, files must be\n'
+                          '                      paired (read_1 and its read_2 pair).\n'
+                          '         [...]  Further options:\n'  #TODO - add these in here, now file/dir mode has been abandoned
+                          '                    use "reptools file --help" or "reptools dir --help" to see\n'
+                          '                    these\n'
                           '\n',
                           usage='reptools [mode] [function(s)] -i <input> [...]\n',
                           prog='reptools',
@@ -47,6 +46,7 @@ def parse_args():
     #parent parser, to supply shared options
     reptools_functions = ['call','denoise','EEfilter','VDJtools']
     parent_parser = argparse.ArgumentParser(add_help=False,usage=None,description=None)
+    
     requiredFuns = parent_parser.add_argument_group('Functions') #want to hide all help for these
     requiredFuns.add_argument('functions',nargs='+',choices=reptools_functions)
     
@@ -57,13 +57,6 @@ def parse_args():
     requiredAdaptertrimming.add_argument('--adapters', nargs='+', default=False)
     
     
-    denoise_types = [
-                    'all',
-                    'substitution',
-                    'indel',
-                    'genes'
-    ]
-    
     optionalArgs = parent_parser.add_argument_group('Optional arguments')
     optionalArgs.add_argument(
                               '-d',
@@ -71,7 +64,9 @@ def parse_args():
                               nargs='+',
                               default=False,
                               dest='dbs',
-                              help='To call genes, the paths to 3 fasta databases must be supplied: V, J & C, in the format V=<path> J=<path> C=<path>'
+                              help='To call genes, the paths to 3 fasta databases must be supplied: V, J & C, in the '
+                              'format V=<path> J=<path> C=<path>\n'
+                              'If --databaseDir is set, only the filenames need to specified here.'
                               )
     optionalArgs.add_argument(
                               '-g',
@@ -82,9 +77,9 @@ def parse_args():
     optionalArgs.add_argument(
                                '-o',
                                '--outdir',
-                               nargs='+',
+                               nargs='?',
                                default=False,
-                               help='if not supplied, defaults to --input (or its parent directory, in file mode)'
+                               help='if not supplied, defaults to a subdir of the current path called "reptools_output"'
                               )
     optionalArgs.add_argument(
                               '--notrim',
@@ -92,6 +87,13 @@ def parse_args():
                               help='Skip adapter trimming before calling gene segments'
                               )
     optionalArgs.add_argument('--noCDR3', action='store_true',help='Do not extract CDR3 sequences after calling genes.')
+    
+    denoise_types = [
+                    'all',
+                    'substitution',
+                    'indel',
+                    'genes'
+    ]
     optionalArgs.add_argument(
                               '--denoiseModes',
                               nargs='+',
@@ -196,110 +198,49 @@ def parse_args():
     alignerArgs.add_argument('--wordlength', nargs='+', default=False)
     
     #subparsers
-    #subparsers = parser.add_subparsers(help='test',dest='mode')
-    
     subparsers = parser.add_subparsers(help=argparse.SUPPRESS,dest='mode')
     #subparsers.required = True
     
-    # create the parser for the "file" command
-    parser_file = subparsers.add_parser('file', parents = [parent_parser], help='file help')
-    fileArgs = parser_file.add_argument_group('file mode-specific arguments.\nDefaults will create paths, set to '
-                                              'False to avoid producing files.')
-    fileArgs.add_argument(
-                          '--adaptertrimmedFilestem', default=None, dest='adaptertrimmed_filestem',
-                          help='Adapter trimmed files will be saved to outdir as '
-                          '[adaptertrimmedFilestem][pairsuffix].fastq'
-                          'Defaults to [input filestem (without pairsuffix)]_trimmedfastq[pairsuffix].fastq\n'
-                          'Set to False if output should not be saved.'
-                          )
-    fileArgs.add_argument(
-                          '--fastqFilestem', default=None, dest='hits_filestem',
-                          help='Gene segment-annotated fastq files will be saved to outdir as '
-                          '[fastqFilestem]_F.fastq and [fastqFilestem]_R.fastq'
-                          'Defaults to [input filestem (without pairsuffix)]_F/R.fastq\n'
-                          'Set to False if output should not be saved.'
-                          )
-    fileArgs.add_argument(
-                          '--rawCDR3File', default=None, dest='CDR3_file',
-                          help='Extracted CDR3 will be saved to outdir as rawCDR3File.\n'
-                          'Defaults to [input filestem (without pairsuffix)]_CDR3.fastq\n'
-                          'Set to False if output should not be saved.'
-    )
-    fileArgs.add_argument('--denoisedCDR3File', default=None, dest='denoised_file',
-                          help='Denoised CDR3 will be saved to outdir as denoisedCDR3File.\n'
-                               'Defaults to [input filestem (without pairsuffix)]_denoised.fastq\n'
-                               'Set to False if output should not be saved.'
-                          )
-    fileArgs.add_argument('--filtCDR3File', default=None, dest='filtCDR3_file',
-                          help='EEfiltered CDR3 will be saved to outdir as filtCDR3File.\n'
-                               'Defaults to [input filestem (without pairsuffix)]_EEfilt.fastq\n'
-                              'Set to False if output should not be saved.'
-                          )
-    fileArgs.add_argument('--VDJtoolsFile', default=None, dest='VDJtools_file',
-                          help='VDJtools output will be saved to outdir as VDJtoolsFile.\n'
-                               'Defaults to [input filestem (without pairsuffix)]_VDJtools.tab'
-                          )
-                          
-    fileArgs.add_argument('--seq2cloneFile', default=False, dest='seq2clone_file',
-                          help='VDJOutput tying each assigned input sequence to its assigned V gene, J gene and CDR3 '
-                               'will be saved to outdir as seq2cloneFile.\n'
-                               'Default = not produced'
-                          )
-
-    # create the parser for the "dir" command
-    parser_dir = subparsers.add_parser('dir', parents = [parent_parser], help='dir help')
-    dirArgs = parser_dir.add_argument_group('dir mode-specific path arguments.\nDefaults will create paths, set to '
+    # arguments to specify output subdirectories (these all have sensible defaults), or to suppress outputs
+    dirArgs = parent_parser.add_argument_group('Output path arguments.\nDefaults will create paths, set to '
                                             ' False to avoid producing files.')
     dirArgs.add_argument(
-                          '--adaptertrimmedDir', nargs = '+', default=None, dest='adaptertrimmed_dir',
+                          '--adaptertrimmedDir', nargs = '?', default=None, const=None, dest='adaptertrimmed_dir',
                           help='Adapter trimmed files will be saved to adaptertrimmedDir.\n'
                           'Defaults to outdir/adaptertrimmed\n'
-                          'Supply an absolute path, or a relative path to append to outdir\n'
                           'Set to False if output should not be saved.'
                         )
     dirArgs.add_argument(
-                        '--fastqDir', nargs = '+', default=None, dest='hits_dir',
+                        '--fastqDir', nargs = '?', default=None, const=None, dest='hits_dir',
                         help='Gene segment-annotated fastq files will be saved to fastqDir.\n'
                         'Defaults to outdir/fastq_hits\n'
-                        'Supply an absolute path, or a relative path to append to outdir\n'
                         'Set to False if output should not be saved.'
                         )
-    dirArgs.add_argument('--rawCDR3Dir', nargs = '+', default=None, dest='CDR3_dir',
+    dirArgs.add_argument('--rawCDR3Dir', nargs = '?', default=None, const=None, dest='CDR3_dir',
                          help='Extracted CDR3 fastq files will be saved to rawCDR3Dir.\n'
                         'Defaults to outdir/rawCDR3\n'
-                        'Supply an absolute path, or a relative path to append to outdir\n'
                         'Set to False if output should not be saved.'
                         )
-    dirArgs.add_argument('--denoisedCDR3Dir', nargs = '+', default=None, dest='denoised_dir',
+    dirArgs.add_argument('--denoisedCDR3Dir', nargs = '?', default=None, const=None, dest='denoised_dir',
                          help='Denoised CDR3 fastq files will be saved to denoisedCDR3Dir.\n'
                         'Defaults to outdir/denoisedCDR3\n'
-                        'Supply an absolute path, or a relative path to append to outdir\n'
                         'Set to False if output should not be saved.'
                         )
     dirArgs.add_argument(
-                        '--filtCDR3Dir', nargs = '+', default=None, dest='filtCDR3_dir',
+                        '--filtCDR3Dir', nargs = '?', default=None, const=None, dest='filtCDR3_dir',
                         help='Expected error-filtered CDR3 fastq files will be saved to filtCDR3Dir.\n'
-                        'Defaults to outdir/EEfilteredCDR3.\n'
-                        'Supply an absolute path, or a relative path to append to outdir\n'
+                        'Defaults to outdir/EEfilteredCDR3\n'
                         'Set to False if output should not be saved.'
                         )
     dirArgs.add_argument(
-                         '--VDJtoolsDir', nargs = '+', default=None, dest='VDJtools_dir',
+                         '--VDJtoolsDir', nargs = '?', default=None, const=None, dest='VDJtools_dir',
                          help='VDJtools files will be saved to VDJtoolsDir.\n'
-                        'Defaults to outdir/VDJtools.\n'
-                        'Supply an absolute path, or a relative path to append to outdir\n'
+                        'Defaults to outdir/VDJtools\n'
+                        'Set to False if output should not be saved.'
                          )
     
     args = parser.parse_args()
     
-    #catch missing subparser (mode argument) - this rather than have it set to required in order to provide more useful
-    #help 
-    if not args.mode:
-        print()
-        print('Error: Mode (dir or file) must be supplied.\n')
-        parser.print_help()
-        # parser.print_usage() # for just the usage line
-        parser.exit()
     #function selection logic
     if 'call' in args.functions and len(args.functions)>1 and args.noCDR3:
         raise ValueError('--noCDR3 may only be set when the call function is used on its own.\n'
@@ -394,122 +335,66 @@ def parse_args():
     #parse labels
     args.labels = parse_gene_setting(args.labels,'labels',['C','J','V'],str)
     
-    #build directory lists for dir mode:
-    def set_list_lens(outlist,required_len,name):
-        if outlist is None:
-            return([None]*required_len)
-        elif not outlist:
-            return([False]*required_len)
-        else:
-            if len(outlist)==1 and outlist[0].lower()=='false':
-                return([False]*required_len)
-            elif len(outlist)==1 and outlist[0].lower()=='none':
-                return([None]*required_len)
-            elif len(outlist)!=required_len:
-                raise ValueError(
-                                 'Error with {}: If more than one input directory is supplied, a matching number of '
-                                 'each output directory is also required (or output paths should be omitted, for '
-                                 'default output, or set to None, where output is not required).'.format(name)
-                                 )
-            else:
-                outlist = [i if i.lower()!='false' else False for i in outlist]
-                return(outlist)
+    ################
+    #rewritten to handle lists of input files
+    #glob if required
+    if platform.system() == 'Windows':
+        globs = [glob(i) for i in args.input]
+        args.input = [os.path.abspath(_) for g in globs for _ in g] #flatten list of glob outputs, and make abspaths
     
-    args.tempdirs = []
-    if args.mode=='dir':
-        required_len = len(args.input)
-        args.outdir = set_list_lens(args.outdir,required_len,'args.outdir')
-        for n,outdir in enumerate(args.outdir): 
-            #set each outdir to the matching indir, if it isn't already set
-            if not outdir:
-                args.outdir[n] = args.input[n]
-            #and make each outdir an absolute path
-            args.outdir[n]  = os.path.abspath(args.outdir[n])
-        if 'call' in args.functions:
-            args.adaptertrimmed_dir = set_list_lens(args.adaptertrimmed_dir, required_len,'args.adaptertrimmed_dir')
-            z = [
-                 build_path(
-                            True, subdir, 'adaptertrimmed', outdir
-                            ) for subdir,outdir in zip(args.adaptertrimmed_dir,args.outdir)
-                ]
-            args.adaptertrimmed_dir = [t[0] for t in z]
-            args.tempdirs.extend([t[1] for t in z])
-            
-            args.hits_dir = set_list_lens(args.hits_dir, required_len, 'args.hits_dir')
-            z = [
-                 build_path(
-                            True, subdir, 'fastq_hits', outdir
-                            ) for subdir,outdir in zip(args.hits_dir,args.outdir)
-                ]
-            args.hits_dir = [t[0] for t in z]
-            args.tempdirs.extend([t[1] for t in z])
-            
-            args.CDR3_dir = set_list_lens(args.CDR3_dir, required_len, 'args.CDR3_dir')
-            z = [
-                 build_path(
-                            True, subdir, 'rawCDR3', outdir
-                            ) for subdir,outdir in zip(args.CDR3_dir,args.outdir)
-                ]
-            args.CDR3_dir = [t[0] for t in z]
-            args.tempdirs.extend([t[1] for t in z])
-        
-        if 'denoise' in args.functions:
-            args.denoised_dir = set_list_lens(args.denoised_dir, required_len, 'args.denoised_dir')
-            z = [
-                 build_path(
-                            True, subdir, 'denoisedCDR3', outdir
-                            ) for subdir,outdir in zip(args.denoised_dir,args.outdir)
-                ]
-            args.denoised_dir = [t[0] for t in z]
-            args.tempdirs.extend([t[1] for t in z])
-        
-        if 'EEfilter' in args.functions:
-            args.filtCDR3_dir = set_list_lens(args.filtCDR3_dir, required_len, 'args.filtCDR3_dir')
-            z = [
-                 build_path(
-                            True, subdir, 'EEfilteredCDR3', outdir
-                            ) for subdir,outdir in zip(args.filtCDR3_dir,args.outdir)
-                ]
-            args.filtCDR3_dir = [t[0] for t in z]
-            args.tempdirs.extend([t[1] for t in z])
-        
-        if 'VDJtools' in args.functions:
-            args.VDJtools_dir = set_list_lens(args.VDJtools_dir, required_len, 'args.VDJtools_dir')
-            z = [
-                 build_path(
-                            True, subdir, 'VDJtools', outdir
-                            ) for subdir,outdir in zip(args.VDJtools_dir,args.outdir)
-                ]
-            args.VDJtools_dir = [t[0] for t in z]
-            args.tempdirs.extend([t[1] for t in z])
+    #set outdir defaults, if they were not set in arguments
+    if args.outdir == 'False':
+        raise ValueError('False is not a valid entry for outdir.  If it was your intention to use an\n'
+                         'output directory called "False", why not try something less confusing?\n'
+                         'If it was your intention to use the default value, please omit the --outdir\n'
+                         'entry entirely.')
+    elif not args.outdir:
+        args.outdir = os.path.abspath('reptools_output')
+    else:
+        args.outdir = os.path.abspath(args.o+utdir)
     
-    #check list lengths for file mode:
-    if args.mode=='file':
-        if args.outdir and len(args.outdir)>1:
-            raise ValueError('Only one outdir may be specified in file mode.')
-        elif args.outdir:
-            args.outdir = args.outdir[0] #want a string, not a list for file mode
-        elif args.outdir==False or args.outdir==None:
-            pass 
-        else:
-            args.outdir=False
-        if 'call' in args.functions and len(args.input)!=2:
-            raise ValueError(
-                             'If the call function is invoked in file mode, -i must be supplied with two file names '
-                             '(read_1 and read_2).'
-                             )
-        if 'call' not in args.functions and len(args.input)!=1:
-            raise ValueError(
-                             'If the denoise, EEfilter, or VDJtools functions are invoked in file mode in the absence of '
-                             'the call function, -i must be supplied with just a single file name (a CDR3 fastq file).'
-                             )
+    
+    #set output subdirectory paths
+    tempdirs = []
+    
+    if 'call' in args.functions:
+        z = build_path(True, selected_dir=args.adaptertrimmed_dir, default_dir='adaptertrimmed', outdir=args.outdir)
+        #This builds an abspath to a directory to store adapter-trimmed sequences in.
+        #A tuple is returned, of which the first element is a path, and the second element is either None (if the 
+        #  path is NOT a temporary dir), or the same as the first element (if the path IS a temporary dir).
+        #   - if args.adaptertrimmed_dir is None (the default), the path will be a subdir of args.outdir called 
+        #       "adapterttrimmed"
+        #   - if args.adaptertrimmed_dir is False (the default), the path will be a temporary dir
+        #   - if args.adaptertrimmed_dir is a absolute path, it will be used as-is
+        #   - if args.adaptertrimmed_dir is a relative path, it will be appended to the main output dir
+        args.adaptertrimmed_dir = z[0] #update adaptertrimmed_dir with path
+        tempdirs.extend(z[1]) #if the path is a temporary dir, add it to the list of dirs to remove on cleanup
         
-        #for file mode, check that denoise has been called if --seq2cloneFile is set
-        if 'denoise' not in args.functions and args.seq2clone_file:
-            raise ValueError(
-                         'For seq2cloneFile output, the denoise function must be envoked (other functions may be '
-                         'invoked at the same time.'
-                         )
+        z = build_path(True, selected_dir=args.hits_dir, default_dir='fastq_hits', outdir=args.outdir) #as above
+        args.hits_dir = z[0] #update hits_dir with path
+        tempdirs.extend(z[1]) #if the path is a temporary dir, add it to the list of dirs to remove on cleanup
+        
+        z = build_path(True, selected_dir=args.CDR3_dir, default_dir='rawCDR3', outdir=args.outdir) #as above
+        args.CDR3_dir = z[0] #update hits_dir with path
+        tempdirs.extend(z[1]) #if the path is a temporary dir, add it to the list of dirs to remove on cleanup
+
+    
+    if 'denoise' in args.functions:
+        z = build_path(True, selected_dir=args.denoised_dir, default_dir='denoisedCDR3', outdir=args.outdir) #as above
+        args.denoised_dir = z[0] #update denoised_dir with path
+        tempdirs.extend(z[1]) #if the path is a temporary dir, add it to the list of dirs to remove on cleanup
+    
+    if 'EEfilter' in args.functions:
+        z = build_path(True, selected_dir=args.filtCDR3_dir, default_dir='EEfilteredCDR3', outdir=args.outdir) #as above
+        args.filtCDR3_dir = z[0] #update filtCDR3_dir with path
+        tempdirs.extend(z[1]) #if the path is a temporary dir, add it to the list of dirs to remove on cleanup
+    
+    if 'VDJtools' in args.functions:
+        z = build_path(True, selected_dir=args.VDJtools_dir, default_dir='VDJtools', outdir = args.outdir) #as above
+        args.VDJtools_dir = z[0] #update denoised_dir with path
+        tempdirs.extend(z[1]) #if the path is a temporary dir, add it to the list of dirs to remove on cleanup
+        #not sure it CAN be a temporary path, but leave line above in for now
+    
     
     #process title line format, to idenify position of cluster ID
     title_format_split = args.title_format.lower().split('|')
@@ -517,7 +402,8 @@ def parse_args():
         args.clusterID_position = title_format_split.index('clusterid')
     except ValueError:
         raise ValueError('If --titleFormat is set, it must include clusterID')
-    return(args)
+    
+    return(args,tempdirs)
 
 
 def parse_gene_setting(arg,argname,valid_keys,fun):
@@ -537,75 +423,52 @@ def main():
     import shutil
     import tempfile
     
-    args = parse_args()
+    args,tempdirs = parse_args()
     
-    if args.mode=='file' and args.outdir:
-        #to prevent trouble later with abspath detection in default filename generation
-        args.outdir = os.path.abspath(args.outdir)
-    
-    if args.mode=='dir':
-        #to prevent trouble later with abspath detection in default filename generation
-        #outdirs = []
-        #for outdir in args.outdir:
-        #    if outdir:
-        #        outdir = os.path.abspath(outdir)
-        #    outdirs.append(outdir)
+    if 'call' in args.functions:
+        file_pairs = assign_filepairs(args.input,pairsuffixes) #returns a dictionary of filepairs, keyed by file stem 
         
-        if 'call' in args.functions:
-            call_output = []
-            for indir,outdir,adaptertrimmed_dir,hits_dir,CDR3_dir in zip(
-                                                                  args.input,
-                                                                  args.outdir,
-                                                                  args.adaptertrimmed_dir,
-                                                                  args.hits_dir,
-                                                                  args.CDR3_dir
-                                                                  ):
-                call_output.append(
-                                reptools.call_dir(
-                                    indir = indir,
-                                    dbs = args.dbs,
-                                    genedictfile = args.genedict,
-                                    db_dir = args.db_dir,
-                                    outdir = outdir,
-                                    notrim = args.notrim,
-                                    adaptertrimmed_dir = adaptertrimmed_dir,
-                                    hits_dir = hits_dir,
-                                    CDR3_dir = CDR3_dir,
-                                    Cmiss_dir = False,
-                                    ChitVmiss_dir = False,
-                                    ChitVhitJmiss_dir = False,
-                                    Vsegmentout_dir = False,
-                                    filetype = 'fastq',
-                                    pairsuffixes = args.pairsuffixes,
-                                    title_split = args.title_split,
-                                    labels = args.labels,
-                                    mincols = args.mincols,
-                                    id = args.id,
-                                    evalue = args.evalue,
-                                    wordlength = args.wordlength,
-                                    gapopen = False,
-                                    gapextend = False,
-                                    aligners = args.aligners,
-                                    aligner_paths = args.aligner_paths,
-                                    adapters = args.adapters,
-                                    threads = args.threads,
-                                    Vdb_length = args.C103db_length,
-                                    tiebreaker = args.tiebreaker,
-                                    overwrite = args.overwrite,
-                                    clusterID_position = args.clusterID_position,
-                                    blastdb_version = args.blastdb_version
-                                    )
-                                )
-            args.input = call_output
+        call_output = reptools.call_pairslist(
+                                        filepairs = file_pairs,
+                                        dbs = args.dbs,
+                                        genedictfile = args.genedict,
+                                        db_dir = args.db_dir,
+                                        outdir = args.outdir,
+                                        notrim = args.notrim,
+                                        adaptertrimmed_dir = args.adaptertrimmed_dir,
+                                        hits_dir = args.hits_dir,
+                                        CDR3_dir = args.CDR3_dir,
+                                        Cmiss_dir = False,
+                                        ChitVmiss_dir = False,
+                                        ChitVhitJmiss_dir = False,
+                                        Vsegmentout_dir = False,
+                                        filetype = 'fastq',
+                                        pairsuffixes = args.pairsuffixes,
+                                        title_split = args.title_split,
+                                        labels = args.labels,
+                                        mincols = args.mincols,
+                                        id = args.id,
+                                        evalue = args.evalue,
+                                        wordlength = args.wordlength,
+                                        gapopen = False,
+                                        gapextend = False,
+                                        aligners = args.aligners,
+                                        aligner_paths = args.aligner_paths,
+                                        adapters = args.adapters,
+                                        threads = args.threads,
+                                        Vdb_length = args.C103db_length,
+                                        tiebreaker = args.tiebreaker,
+                                        overwrite = args.overwrite,
+                                        clusterID_position = args.clusterID_position,
+                                        blastdb_version = args.blastdb_version
+                                        )
+        args.input = call_output #pipe output paths to next function, by overwriting input paths
         
         if 'denoise' in args.functions:
-            denoise_output = []
-            for indir,outdir,FASTQout_dir in zip(args.input,args.outdir,args.denoised_dir):
-                denoise_output.append(
-                                      reptools.denoise_dir(
-                                                    indir,
-                                                    outdir = outdir,
-                                                    FASTQout_dir = FASTQout_dir,
+            denoise_output = reptools.denoise_filelist(
+                                                    args.input,
+                                                    outdir = args.outdir,
+                                                    FASTQout_dir = args.denoised_dir,
                                                     subs = args.denoise_substitution,
                                                     indels = args.denoise_indel,
                                                     deambig = args.denoise_gene_segments,
@@ -613,170 +476,32 @@ def main():
                                                     threshold = args.threshold,
                                                     indel_threshold = args.indel_threshold,
                                                     overwrite = args.overwrite
-                                                   )
-                                       )
-            
-            
-            args.input = denoise_output
+                                                  )
+            args.input = denoise_output #pipe output paths to next function, by overwriting input paths
         
         if 'EEfilter' in args.functions:
-            EE_output = []
-            for indir,outdir,FASTQout_dir in zip(args.input,args.outdir,args.filtCDR3_dir):
-                EE_output.append(
-                                reptools.EEfilter_dir(
-                                                indir,
-                                                outdir = outdir,
-                                                FASTQout_dir = FASTQout_dir,
-                                                maxee = args.CDR3maxee,
-                                                overwrite = args.overwrite
-                                            )
+            EE_output = reptools.EEfilter_filelist(
+                                               args.input,
+                                               outdir = args.outdir,
+                                               FASTQout_dir = args.filtCDR3_dir,
+                                               maxee = args.CDR3maxee,
+                                               overwrite = args.overwrite
+                                              )
+            args.input = EE_output #pipe output paths to next function, by overwriting input paths
+        
+        if 'VDJtools' in args.functions:
+            reptools.make_VDJtools_filelist(
+                                args.input,
+                                outdir = args.outdir,
+                                VDJout_dir = args.VDJtools_dir,
+                                genes = args.labels,
+                                emptycols = ['D'],
+                                overwrite = args.overwrite
                                 )
-            args.input = EE_output
         
-        if 'VDJtools' in args.functions:
-            for indir,outdir,VDJout_dir in zip(args.input,args.outdir,args.VDJtools_dir):
-                reptools.make_VDJtools_dir(
-                                    indir,
-                                    outdir = outdir,
-                                    VDJout_dir = VDJout_dir,
-                                    genes = args.labels,
-                                    emptycols = ['D'],
-                                    overwrite = args.overwrite
-                                    )
-        
-        #remove temporary output files
-        reptools.clean_up_dirs(args.tempdirs)
+        #remove temporary output files - TODO: put this in an "on exit" function, to handle cleanup on crashes etc.
+        reptools.clean_up_dirs(tempdirs)
     
-    if args.mode=='file':
-        if not args.outdir:
-            args.outdir = os.path.split(os.path.realpath(os.path.expanduser(args.input[0])))[0]
-        
-        reptools.ensure_dir(args.outdir)
-        toremove = []
-        in1_stem = os.path.split(os.path.splitext(args.input[0])[0])[1]
-        stem =  in1_stem.split(args.pairsuffixes[0])[0]
-        if 'call' in args.functions:
-            if args.db_dir:
-                args.dbs = {gene:os.path.join(args.db_dir,args.dbs[gene]) for gene in args.dbs}       
-            #make default file paths:
-            in2_stem = os.path.split(os.path.splitext(args.input[1])[0])[1]
-            if args.adaptertrimmed_filestem is None:
-                adaptertrimmed1 = build_fn(None,'{}_trimmed.fastq'.format(in1_stem),args.outdir,maketemp=False)
-                adaptertrimmed2 = build_fn(None,'{}_trimmed.fastq'.format(in2_stem),args.outdir,maketemp=False)
-            else:
-                adaptertrimmed1 = '{}{}.fastq'.format(args.adaptertrimmed_filestem, args.pairsuffixes[0])
-                adaptertrimmed2 = '{}{}.fastq'.format(args.adaptertrimmed_filestem, args.pairsuffixes[1])
-                adaptertrimmed1 = build_fn(adaptertrimmed1,None,args.outdir) #add the outdir if supplied is not abs path
-                adaptertrimmed2 = build_fn(adaptertrimmed2,None,args.outdir)
-            if args.hits_filestem is None:
-                outF = build_fn(None,'{}_hits_F.fastq'.format(stem),args.outdir,maketemp=False)
-                outR = build_fn(None,'{}_hits_R.fastq'.format(stem),args.outdir,maketemp=False)
-            else:
-                outF = '{}_F.fastq'.format(args.hits_filestem)
-                outR = '{}_R.fastq'.format(args.hits_filestem)
-                outF = build_fn(outF,None,args.outdir) #add the outdir if supplied is not abs path
-                outR = build_fn(outR,None,args.outdir)
-            
-            args.CDR3_file = build_fn(args.CDR3_file,'{}_CDR3.fastq'.format(stem),args.outdir)
-        
-        if 'denoise' in args.functions:
-            args.denoised_file = build_fn(args.denoised_file,'{}_denoised.fastq'.format(stem),args.outdir)
-            if args.seq2clone_file:
-                args.seq2clone_file = build_fn(args.seq2clone_file,'{}_seq2clone.tsv'.format(stem),args.outdir)
-        
-        if 'EEfilter' in args.functions:
-            args.filtCDR3_file = build_fn(args.filtCDR3_file,'{}_EEfilt.fastq'.format(stem),args.outdir)
-        
-        if 'VDJtools' in args.functions:
-            args.VDJtools_file = build_fn(args.VDJtools_file,'{}_VDJtools.tab'.format(stem),args.outdir)
-        
-        ###############
-        #now run things
-        ###############
-        if 'call' in args.functions:
-            args.input[0] = reptools.call_filepair(
-                                                    in1 = args.input[0],
-                                                    in2 = args.input[1],
-                                                    dbs = args.dbs,
-                                                    genedictfile = args.genedict,
-                                                    noCDR3 = args.noCDR3,
-                                                    notrim = args.notrim,
-                                                    adaptertrimmed1 = adaptertrimmed1,
-                                                    adaptertrimmed2 = adaptertrimmed2,
-                                                    outF = outF,
-                                                    outR = outR,
-                                                    outCDR3 = args.CDR3_file,
-                                                    Cmiss1 = False, Cmiss2 = False,
-                                                    JmissF = False, JmissR = False,
-                                                    VmissF = False, VmissR = False,
-                                                    outVsegF = False, outVsegR = False,
-                                                    title_split = args.title_split,
-                                                    overwrite = args.overwrite,
-                                                    labels = args.labels,
-                                                    mincols = args.mincols,
-                                                    id = args.id,
-                                                    evalue = args.evalue,
-                                                    wordlength = args.wordlength,
-                                                    gapopen = False,
-                                                    gapextend = False,
-                                                    aligners = args.aligners,
-                                                    aligner_paths = args.aligner_paths,
-                                                    adapters = args.adapters,
-                                                    threads = args.threads,
-                                                    Vdb_length = args.C103db_length,
-                                                    tiebreaker = args.tiebreaker,
-                                                    clusterID_position = args.clusterID_position,
-                                                    blastdb_version=args.blastdb_version
-                                                    )
-            if not args.input[0]: return(None)
-        if 'denoise' in args.functions:
-            args.input[0],_,changelogs = reptools.denoise_file(
-                                                        args.input[0],
-                                                        outdir = args.outdir,
-                                                        weight_by_qual = True,
-                                                        subs = args.denoise_substitution,
-                                                        indels = args.denoise_indel,
-                                                        deambig = args.denoise_gene_segments,
-                                                        FASTQout_fn = args.denoised_file,
-                                                        overwrite = args.overwrite,
-                                                        threshold = args.threshold,
-                                                        indel_threshold = args.indel_threshold
-                                                    )
-            if not args.input[0]: return(None)
-        if 'EEfilter' in args.functions:
-            args.input[0] = reptools.EEfilter_file(
-                                            args.input[0],
-                                            FASTQout = args.filtCDR3_file,
-                                            maxee = args.CDR3maxee
-                                        )
-            if not args.input[0]: return(None)
-        if 'VDJtools' in args.functions:
-            reptools.make_VDJtools(
-                                   CDR3file = args.input[0],
-                                   outfile = args.VDJtools_file,
-                                   genes = args.labels,
-                                   emptycols = ['D']
-                                  )
-            if not args.input[0]: return(None)
-        if args.seq2clone_file:
-            reptools.make_seq2clone(
-                                    CDR3file = args.input[0],
-                                    cluster_files=changelogs,
-                                    outfile=args.seq2clone_file
-                                   )
-            if not args.input[0]: return(None)
-        
-        #print(args)
 
-        #if 'call' in arg.functions and outCDR3 is None:
-        #    os.remove() #remove temporary file
-        
-        #if 'denoise' and args.filtCDR3_file is None:
-        #    os.remove() #remove temporary file
-        
-#if __name__ == "__main__": 
-#    main()
-    
-    
-#py -3 "C:\Users\Stephen Preston\Sync\TCRSeq\reptools\expt_code\developing_denoiser\cli_testing.py" -h
-
+if __name__ == '__main__':
+    sys.exit(main())

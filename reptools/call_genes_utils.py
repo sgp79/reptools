@@ -3,6 +3,41 @@ import tempfile
 import shutil
 import reptools
 
+def assign_filepairs(fns, pairsuffixes=['_1','_2']):
+    """
+    Returns a dictionary of filepairs, keyed by file stem
+    Throws an error if any files are unpaired
+    """
+    if len(pairsuffixes[0])!=len(pairsuffixes[1]):
+        raise ValueError('The read 1 and read 2 suffixes supplied are not the same length.')
+    
+    #check that all files have a suffix
+    for fn in fns:
+        if os.path.splitext(fn)[0][-len(pairsuffixes[0]):] not in pairsuffixes:
+            raise ValueError('Input file {} does not have one of the specified filepair suffixes.'.format(fn))
+    
+    #get a list of filename stems present
+    basenames = [os.path.splitext(fn)[0] for fn in fns]
+    unique_stems = set([fn[:-len(pairsuffixes[0])] for fn in basenames])
+    
+    #pair the files
+    pairfiles = {}
+    for stem in unique_stems:
+        pair = [fn for fn in fns if os.path.splitext(fn)[0][:-len(pairsuffixes[0])] == stem]
+        if len(pair)==1:
+            raise ValueError('No pair file was found for {}'.format(pair[0]))
+        elif len(pair)>2:
+            raise ValueError('More than two files were found with the same namestem: {}\n'
+                             'This may occur if more than one directory is being used as input, but is not\n'
+                             'permitted because it would not be possible to differentiate the output.\n'
+                             'The recommended workaround is to rename the input files, perhaps by adding\n'
+                             'a suffix which identifies their source'.format(', '.join(pair)))
+        else:
+            pairfiles[stem] = pair
+    
+    return(pairfiles)
+
+
 
 def tiebreak(result1,result2,tiebreaker):
     tiebreaker_values = [
