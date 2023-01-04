@@ -12,13 +12,13 @@ def remove_adapter_bbduk(
     
     if pairfile:
         if not outpair: raise ValueError
-        call_list.append('"in1={}"'.format(infile))
-        call_list.append('"out1={}"'.format(outfile))
-        call_list.append('"in2={}"'.format(pairfile))
-        call_list.append('"out2={}"'.format(outpair))
+        call_list.append('in1={}'.format(infile))
+        call_list.append('out1={}'.format(outfile))
+        call_list.append('in2={}'.format(pairfile))
+        call_list.append('out2={}'.format(outpair))
     else:
-        call_list.append('"in={}"'.format(infile))
-        call_list.append('"out={}"'.format(outfile))
+        call_list.append('in='.format(infile))
+        call_list.append('out='.format(outfile))
     
     call_list.append('literal={}'.format(','.join(adapters)))
     

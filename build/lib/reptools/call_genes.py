@@ -7,12 +7,12 @@ import collections
 from reptools import fill_defaults, select_filetypes, checkFiletype
 from reptools import dummy_context_mgr as dummy
 import errno
-import sys
 
 def call_pairslist(
             filepairs,
             dbs,
             genedictfile,
+            outdir,
             db_dir=False,
             noCDR3=False,
             notrim=False,
@@ -77,9 +77,7 @@ def call_pairslist(
         dbs = {gene:os.path.join(db_dir,dbs[gene]) for gene in dbs}            
     
     #call
-    outfiles = []
-    for abs_stem,filepair in filepairs.items():
-        stem = os.path.basename(abs_stem)
+    for stem,filepair in filepairs.items():
         in1=filepair[0]
         in2=filepair[1]
         adaptertrimmed1,adaptertrimmed2 = reptools.make_paired_filepaths(adaptertrimmed_dir, stem, pairsuffixes)
@@ -122,10 +120,9 @@ def call_pairslist(
                     clusterID_position=clusterID_position,
                     blastdb_version=blastdb_version
                     )
-        outfiles.append(_)
     reptools.clean_up_dirs(tempdirs)
     
-    return(outfiles)
+    return(outCDR3)
 
 
 def call_filepair(

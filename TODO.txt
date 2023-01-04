@@ -1,11 +1,5 @@
-v0.12.5.1
-    25th April 2020
-    1. Add options to supply gapopen, gapextend, penalty, etc. settings to blastn.
-    2. Add function to call a single gene, rather than running the whole pipeline (this will be good for testing, and
-      also for finding new alleles.
-v0.12.3
-    23rd April 2020
-    1. Write a function to combine rare clones with ambiguous V gene allocations into more common ones with unambigous
-    (or less ambiguous) allocations.  DONE, with denoising functions v0.14.0.
-    2. Make sure the mincols (and other criteria) are either passed to the aligner or filtered in the parser. DONE,
-      v0.12.5 (working properly in v0.12.5.1)
+Add options to supply gapopen, gapextend, penalty, etc. settings to blastn.
+
+Add function to call a single gene, rather than running the whole pipeline (this will be good for testing, and also 
+for finding new alleles.
+
