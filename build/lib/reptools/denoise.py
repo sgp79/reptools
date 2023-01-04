@@ -5,13 +5,14 @@ import collections
 import os
 import tempfile
 import reptools
-#TODO - 
+
 def denoise_filelist(
     infiles,
-    FASTQout_dir = None,
+    outdir,
     weight_by_qual = True,
     threshold = 10,
     indel_threshold = 100,
+    FASTQout_dir = None,
     subs = True,
     indels = True,
     deambig = True,
@@ -19,7 +20,7 @@ def denoise_filelist(
     overwrite = False
     ):
     filetypes = reptools.select_filetypes(filetype)
-    infiles=[fn for fn in infiles if os.path.splitext(fn.lower())[1] in filetypes]
+    infiles=[fn for fn in os.listdir(indir) if os.path.splitext(fn.lower())[1] in filetypes]
     #line above does a primitive filetype check.  Want to add a proper check on each file (structure, not ext)
     if len(infiles)==0:
         raise IOError('No fastq files found.\n')
@@ -29,10 +30,9 @@ def denoise_filelist(
     
     FASTQoutfiles = []
     for fn in infiles:
-        stem = os.path.splitext(os.path.basename(fn))[0]
-        FASTQout = reptools.make_unpaired_filepaths(FASTQout_dir, stem)
+        FASTQout = reptools.make_unpaired_filepaths(FASTQout_dir, os.path.splitext(fn)[0])
         outfn = reptools.denoise_file(
-                      fn,
+                      os.path.join(indir,fn),
                       weight_by_qual = weight_by_qual,
                       threshold = threshold,
                       indel_threshold = indel_threshold,
@@ -70,7 +70,7 @@ def denoise_file(
     """
     """
     inpath = os.path.split(infile)[0]
-    inbase = os.path.basename(infile)
+    inbase = os.path.split(infile)[1]
     filestem = os.path.splitext(inbase)[0]
     
     if not outdir: outdir = inpath

@@ -749,14 +749,13 @@ def build_fn(selected_fn,default_fn,outdir,maketemp=True):
         raise ValueError('selected_fn must be False, None, or a string')
 
 
-def make_paired_filepaths(pth,stem,pairsuffixes):
-    if pth:
-        fn1 = os.path.join(pth,'{}{}.fastq'.format(stem,pairsuffixes[0]))
-        fn2 = os.path.join(pth,'{}{}.fastq'.format(stem,pairsuffixes[1]))
+def make_paired_filepaths(folder,stem,pairsuffixes):
+    if folder:
+        fn1 = os.path.join(folder,'{}{}.fastq'.format(stem,pairsuffixes[0]))
+        fn2 = os.path.join(folder,'{}{}.fastq'.format(stem,pairsuffixes[1]))
+        return(fn1,fn2)
     else:
-        fn1=False
-        fn2=False
-    return(fn1,fn2)
+        return(False,False)
 
 
 def make_unpaired_filepaths(folder,stem,ext='fastq'):

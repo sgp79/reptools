@@ -87,39 +87,6 @@ def make_VDJtools_dir(
         outfn = os.path.splitext(fn)[0]+'.tab'
         reptools.make_VDJtools(os.path.join(indir,fn),os.path.join(VDJout_dir,outfn),genes,emptycols,filetype)
 
-def make_VDJtools_filelist(
-                      infiles,
-                      outdir=False,
-                      VDJout_dir=None,
-                      genes=False,
-                      emptycols=['D'],
-                      overwrite=False,
-                      filetype='fastq',
-                      ):
-    if not genes:
-        genes = {'V':'V','J':'J','C':'C'}
-    if not outdir:
-        outdir = indir
-    
-    VDJout_dir,_ = reptools.build_path(True, VDJout_dir, 'VDJtools', outdir)
-
-    filetypes = reptools.select_filetypes(filetype)
-    infiles = [fn for fn in infiles if os.path.splitext(fn)[1] in filetypes]
-    if len(infiles)==0:
-        print('No files of specified type found.\n')
-        return
-    
-    if overwrite:
-        reptools.remove_dir(VDJout_dir,recursive=True)
-    reptools.cautious_mkdir(VDJout_dir)
-    
-    for fn in infiles:
-        stem = os.path.splitext(os.path.basename(fn))[0]
-        outfn = '{}.tab'.format(stem)
-        reptools.make_VDJtools(fn,os.path.join(VDJout_dir,outfn),genes,emptycols,filetype)
-
-
-
 
 def make_VDJtools(CDR3file,outfile,genes=False,emptycols=['D'],filetype='fastq'):
     #in order to reduce memory usage, count the reads in the whole file first (will increase run-time almost 2-fold, though)

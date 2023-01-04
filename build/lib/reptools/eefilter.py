@@ -1,9 +1,8 @@
 import reptools
 import os
 
-
-def EEfilter_filelist(
-                infiles,
+def EEfilter_dir(
+                indir,
                 outdir=False,
                 FASTQout_dir=None,
                 FASTAout_dir=False,
@@ -15,7 +14,7 @@ def EEfilter_filelist(
         outdir = indir
     
     FASTQout_dir,_ = reptools.build_path(True, FASTQout_dir, 'EEfilteredCDR3', outdir)
-    FASTAout_dir = False #not implemented
+    FASTAout_dir = False
     
     if not FASTQout_dir and not FASTAout_dir:
         raise ValueError('Please supply one or both of FASTQout_dir and FASTAout_dir to EEfilter_dir()')
@@ -24,25 +23,23 @@ def EEfilter_filelist(
         if pth: reptools.cautious_mkdir(pth,overwrite=overwrite)
     
     filetypes = reptools.select_filetypes(filetype)
-    infiles=[fn for fn in infiles if os.path.splitext(fn.lower())[1] in filetypes]
+    infiles=[fn for fn in os.listdir(indir) if os.path.splitext(fn.lower())[1] in filetypes]
     
     if len(infiles)==0:
         print('No fastq files found.\n')
         return
     
-    outfiles = []
     for fn in infiles:
-        FASTQout = reptools.make_unpaired_filepaths(FASTQout_dir, os.path.splitext(os.path.basename(fn))[0])
-        #FASTAout = reptools.make_unpaired_filepaths(FASTAout_dir, os.path.splitext(os.path.basename(fn))[0],'fas')
+        FASTQout = reptools.make_unpaired_filepaths(FASTQout_dir, os.path.splitext(fn)[0])
+        FASTAout = reptools.make_unpaired_filepaths(FASTAout_dir, os.path.splitext(fn)[0],'fas')
         _ = reptools.EEfilter_file(
-                      fn,
+                      os.path.join(indir,fn),
                       FASTQout = FASTQout,
-                      #FASTAout = FASTAout,
+                      FASTAout = FASTAout,
                       maxee = maxee
                       )
-        outfiles.append(_)
     
-    return(outfiles)
+    return(FASTQout_dir)
 
 
 def EEfilter_file(infile,FASTAout=False,FASTQout=False,maxee=1):

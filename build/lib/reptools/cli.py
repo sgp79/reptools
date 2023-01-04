@@ -343,10 +343,6 @@ def parse_args():
     #if platform.system() == 'Windows': #linux seems to need specific glob unpacking too
     globs = [glob(i) for i in args.input]
     args.input = [os.path.abspath(_) for g in globs for _ in g] #flatten list of glob outputs, and make abspaths
-    if len(args.input) == 0:
-        raise ValueError('No files found.  Have you specified the path/wildcards correctly?')
-    else:
-        print('Will process the following files: {}\n'.format(','.join([os.path.basename(_) for _ in args.input])))
     
     #set outdir defaults, if they were not set in arguments
     if not args.outdir:
@@ -383,6 +379,7 @@ def parse_args():
         z = build_path(True, selected_dir=args.CDR3_dir, default_dir='rawCDR3', outdir=args.outdir) #as above
         args.CDR3_dir = z[0] #update hits_dir with path
         tempdirs.append(z[1]) #if the path is a temporary dir, add it to the list of dirs to remove on cleanup
+
     
     if 'denoise' in args.functions:
         z = build_path(True, selected_dir=args.denoised_dir, default_dir='denoisedCDR3', outdir=args.outdir) #as above
@@ -438,6 +435,7 @@ def main():
                                         dbs = args.dbs,
                                         genedictfile = args.genedict,
                                         db_dir = args.db_dir,
+                                        outdir = args.outdir,
                                         notrim = args.notrim,
                                         adaptertrimmed_dir = args.adaptertrimmed_dir,
                                         hits_dir = args.hits_dir,
@@ -468,46 +466,44 @@ def main():
                                         )
         args.input = call_output #pipe output paths to next function, by overwriting input paths
         
-    if 'denoise' in args.functions:
-        print('DENOISING')
-        denoise_output = reptools.denoise_filelist(
-                                                args.input,
-                                                FASTQout_dir = args.denoised_dir,
-                                                subs = args.denoise_substitution,
-                                                indels = args.denoise_indel,
-                                                deambig = args.denoise_gene_segments,
-                                                weight_by_qual = True,
-                                                threshold = args.threshold,
-                                                indel_threshold = args.indel_threshold,
-                                                overwrite = args.overwrite
+        if 'denoise' in args.functions:
+            denoise_output = reptools.denoise_filelist(
+                                                    args.input,
+                                                    outdir = args.outdir,
+                                                    FASTQout_dir = args.denoised_dir,
+                                                    subs = args.denoise_substitution,
+                                                    indels = args.denoise_indel,
+                                                    deambig = args.denoise_gene_segments,
+                                                    weight_by_qual = True,
+                                                    threshold = args.threshold,
+                                                    indel_threshold = args.indel_threshold,
+                                                    overwrite = args.overwrite
+                                                  )
+            args.input = denoise_output #pipe output paths to next function, by overwriting input paths
+        
+        if 'EEfilter' in args.functions:
+            EE_output = reptools.EEfilter_filelist(
+                                               args.input,
+                                               outdir = args.outdir,
+                                               FASTQout_dir = args.filtCDR3_dir,
+                                               maxee = args.CDR3maxee,
+                                               overwrite = args.overwrite
                                               )
-        args.input = denoise_output #pipe output paths to next function, by overwriting input paths
+            args.input = EE_output #pipe output paths to next function, by overwriting input paths
+        
+        if 'VDJtools' in args.functions:
+            reptools.make_VDJtools_filelist(
+                                args.input,
+                                outdir = args.outdir,
+                                VDJout_dir = args.VDJtools_dir,
+                                genes = args.labels,
+                                emptycols = ['D'],
+                                overwrite = args.overwrite
+                                )
+        
+        #remove temporary output files - TODO: put this in an "on exit" function, to handle cleanup on crashes etc.
+        reptools.clean_up_dirs(tempdirs)
     
-    if 'EEfilter' in args.functions:
-        print('FILTERING BY EXPECTED ERROR RATE')
-        EE_output = reptools.EEfilter_filelist(
-                                           args.input,
-                                           outdir = args.outdir,
-                                           FASTQout_dir = args.filtCDR3_dir,
-                                           maxee = args.CDR3maxee,
-                                           overwrite = args.overwrite
-                                          )
-        args.input = EE_output #pipe output paths to next function, by overwriting input paths
-    
-    if 'VDJtools' in args.functions:
-        print('WRITING VDJ FORMAT FILES')
-        reptools.make_VDJtools_filelist(
-                            args.input,
-                            outdir = args.outdir,
-                            VDJout_dir = args.VDJtools_dir,
-                            genes = args.labels,
-                            emptycols = ['D'],
-                            overwrite = args.overwrite
-                            )
-    
-    #remove temporary output files - TODO: put this in an "on exit" function, to handle cleanup on crashes etc.
-    reptools.clean_up_dirs(tempdirs)
-
 
 if __name__ == '__main__':
     sys.exit(main())
