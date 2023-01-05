@@ -1,3 +1,8 @@
+Bugs:
+Attempting to run call then VDJtools (without denoise/EEfilter steps) leads to a crash because makeVDJtools expects its
+input to include counts (derepcount style).  Need to do a check for this, and trigger a count if it isn't there.
+
+To add:
 Add options to supply gapopen, gapextend, penalty, etc. settings to blastn.
 
 Add function to call a single gene, rather than running the whole pipeline (this will be good for testing, and also 

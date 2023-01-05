@@ -43,18 +43,28 @@ def parse_args():
     requiredFuns.add_argument(
                               'functions',
                               nargs='+',
-                              choices=reptools_functions
+                              choices=reptools_functions,
+                              help=False
                               )
     
     requiredNamed = parser.add_argument_group('Required arguments')
     requiredNamed.add_argument('-i', '--input', nargs='+', required=True)
     
-    requiredAdaptertrimming = parser.add_argument_group('Arguments required unless --notrim is set')
+    requiredAdaptertrimming = parser.add_argument_group('Arguments required for "call" unless --notrim is set')
     requiredAdaptertrimming.add_argument('--adapters', nargs='+', default=False)
     
-    
-    optionalArgs = parser.add_argument_group('Optional arguments')
-    optionalArgs.add_argument(
+    outArgs = parser.add_argument_group('Output path arguments')
+    outArgs.add_argument(
+                               '-o',
+                               '--outdir',
+                               nargs='?',
+                               default=False,
+                               help='If not supplied, defaults to a subdir of the current path called "reptools_output"'
+                              )
+    outArgs.add_argument('--overwrite', action='store_true')
+
+    pathArgs = parser.add_argument_group('Database and utility path arguments (all are optional)')
+    pathArgs.add_argument(
                               '-d',
                               '--databases',
                               nargs='+',
@@ -64,26 +74,32 @@ def parse_args():
                               'format V=<path> J=<path> C=<path>\n'
                               'If --databaseDir is set, only the filenames need to specified here.'
                               )
-    optionalArgs.add_argument(
+    pathArgs.add_argument(
                               '-g',
                               '--genedict',
                               default=False,
                               help='To call genes, the path to a csv gene dictionary must be supplied'
                               )
-    optionalArgs.add_argument(
-                               '-o',
-                               '--outdir',
-                               nargs='?',
-                               default=False,
-                               help='if not supplied, defaults to a subdir of the current path called "reptools_output"'
+    pathArgs.add_argument(
+                              '--databaseDir',
+                              default=False,
+                              dest='db_dir',
+                              help='If supplied, look here for the database files'
                               )
+    pathArgs.add_argument(
+                              '--alignerPaths', nargs='+', default=False, dest='aligner_paths',
+                              help='Paths to aligners and associated files.\n'
+                                   'Default is blastn=blastn swipe=swipe makeblastdb=makeblastdb bbduk=bbduk.sh'
+                              )
+    
+    optionalArgs = parser.add_argument_group('Optional arguments')
     optionalArgs.add_argument(
                               '--notrim',
                               action='store_true',
                               help='Skip adapter trimming before calling gene segments'
                               )
-    optionalArgs.add_argument('--noCDR3', action='store_true',help='Do not extract CDR3 sequences after calling genes.')
-    
+    optionalArgs.add_argument('--pairSuffixes', nargs=2, default=['_1','_2'], dest='pairsuffixes')
+    optionalArgs.add_argument('--noCDR3', action='store_true',help='Do not extract CDR3 sequences after calling genes.') 
     denoise_types = [
                     'all',
                     'substitution',
@@ -100,12 +116,6 @@ def parse_args():
                               'for all genes.\n  Defaults to "all".'
                             )
     optionalArgs.add_argument(
-                              '--databaseDir',
-                              default=False,
-                              dest='db_dir',
-                              help='If supplied, look here for the database files'
-                              )
-    optionalArgs.add_argument(
                                '-t',
                                '--threads',
                                default=False,
@@ -119,7 +129,6 @@ def parse_args():
                               help='Substring seperating sequence ID from metadata in fastq title lines.  Defaults to '
                                    'a space.'
                               )
-    optionalArgs.add_argument('--pairSuffixes', nargs=2, default=['_1','_2'], dest='pairsuffixes')
     optionalArgs.add_argument(
                                '--geneLabels',
                                nargs='+',
@@ -129,7 +138,6 @@ def parse_args():
                                'J=XXX C=XXX", where XXX is the desired label.  Any or none may be supplied. Defaults '
                                'to V=V J=J C=C'
                                )
-    optionalArgs.add_argument('--overwrite', action='store_true')
     optionalArgs.add_argument(
                               '--tiebreaker',
                               default = 'evalue',
@@ -142,11 +150,6 @@ def parse_args():
                                 nargs='+',
                                 default=False,
                                 help='Aligner to use for each step.\nDefault is C=blastn J=swipe V=blastn C104=swipe'
-                              )
-    optionalArgs.add_argument(
-                              '--alignerPaths', nargs='+', default=False, dest='aligner_paths',
-                              help='Paths to aligners and associated files.\n'
-                                   'Default is blastn=blastn swipe=swipe makeblastdb=makeblastdb bbduk=bbduk.sh'
                               )
     optionalArgs.add_argument(
                                '--denoiseThreshold', type=float, default=10, dest='threshold',
