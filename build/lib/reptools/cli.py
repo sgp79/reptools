@@ -43,18 +43,28 @@ def parse_args():
     requiredFuns.add_argument(
                               'functions',
                               nargs='+',
-                              choices=reptools_functions
+                              choices=reptools_functions,
+                              help=False
                               )
     
     requiredNamed = parser.add_argument_group('Required arguments')
     requiredNamed.add_argument('-i', '--input', nargs='+', required=True)
     
-    requiredAdaptertrimming = parser.add_argument_group('Arguments required unless --notrim is set')
+    requiredAdaptertrimming = parser.add_argument_group('Arguments required for "call" unless --notrim is set')
     requiredAdaptertrimming.add_argument('--adapters', nargs='+', default=False)
     
-    
-    optionalArgs = parser.add_argument_group('Optional arguments')
-    optionalArgs.add_argument(
+    outArgs = parser.add_argument_group('Output path arguments')
+    outArgs.add_argument(
+                               '-o',
+                               '--outdir',
+                               nargs='?',
+                               default=False,
+                               help='If not supplied, defaults to a subdir of the current path called "reptools_output"'
+                              )
+    outArgs.add_argument('--overwrite', action='store_true')
+
+    pathArgs = parser.add_argument_group('Database and utility path arguments (all are optional)')
+    pathArgs.add_argument(
                               '-d',
                               '--databases',
                               nargs='+',
@@ -64,26 +74,32 @@ def parse_args():
                               'format V=<path> J=<path> C=<path>\n'
                               'If --databaseDir is set, only the filenames need to specified here.'
                               )
-    optionalArgs.add_argument(
+    pathArgs.add_argument(
                               '-g',
                               '--genedict',
                               default=False,
                               help='To call genes, the path to a csv gene dictionary must be supplied'
                               )
-    optionalArgs.add_argument(
-                               '-o',
-                               '--outdir',
-                               nargs='?',
-                               default=False,
-                               help='if not supplied, defaults to a subdir of the current path called "reptools_output"'
+    pathArgs.add_argument(
+                              '--databaseDir',
+                              default=False,
+                              dest='db_dir',
+                              help='If supplied, look here for the database files'
                               )
+    pathArgs.add_argument(
+                              '--alignerPaths', nargs='+', default=False, dest='aligner_paths',
+                              help='Paths to aligners and associated files.\n'
+                                   'Default is blastn=blastn swipe=swipe makeblastdb=makeblastdb bbduk=bbduk.sh'
+                              )
+    
+    optionalArgs = parser.add_argument_group('Optional arguments')
     optionalArgs.add_argument(
                               '--notrim',
                               action='store_true',
                               help='Skip adapter trimming before calling gene segments'
                               )
-    optionalArgs.add_argument('--noCDR3', action='store_true',help='Do not extract CDR3 sequences after calling genes.')
-    
+    optionalArgs.add_argument('--pairSuffixes', nargs=2, default=['_1','_2'], dest='pairsuffixes')
+    optionalArgs.add_argument('--noCDR3', action='store_true',help='Do not extract CDR3 sequences after calling genes.') 
     denoise_types = [
                     'all',
                     'substitution',
@@ -100,12 +116,6 @@ def parse_args():
                               'for all genes.\n  Defaults to "all".'
                             )
     optionalArgs.add_argument(
-                              '--databaseDir',
-                              default=False,
-                              dest='db_dir',
-                              help='If supplied, look here for the database files'
-                              )
-    optionalArgs.add_argument(
                                '-t',
                                '--threads',
                                default=False,
@@ -119,7 +129,6 @@ def parse_args():
                               help='Substring seperating sequence ID from metadata in fastq title lines.  Defaults to '
                                    'a space.'
                               )
-    optionalArgs.add_argument('--pairSuffixes', nargs=2, default=['_1','_2'], dest='pairsuffixes')
     optionalArgs.add_argument(
                                '--geneLabels',
                                nargs='+',
@@ -129,7 +138,6 @@ def parse_args():
                                'J=XXX C=XXX", where XXX is the desired label.  Any or none may be supplied. Defaults '
                                'to V=V J=J C=C'
                                )
-    optionalArgs.add_argument('--overwrite', action='store_true')
     optionalArgs.add_argument(
                               '--tiebreaker',
                               default = 'evalue',
@@ -142,11 +150,6 @@ def parse_args():
                                 nargs='+',
                                 default=False,
                                 help='Aligner to use for each step.\nDefault is C=blastn J=swipe V=blastn C104=swipe'
-                              )
-    optionalArgs.add_argument(
-                              '--alignerPaths', nargs='+', default=False, dest='aligner_paths',
-                              help='Paths to aligners and associated files.\n'
-                                   'Default is blastn=blastn swipe=swipe makeblastdb=makeblastdb bbduk=bbduk.sh'
                               )
     optionalArgs.add_argument(
                                '--denoiseThreshold', type=float, default=10, dest='threshold',
@@ -343,6 +346,10 @@ def parse_args():
     #if platform.system() == 'Windows': #linux seems to need specific glob unpacking too
     globs = [glob(i) for i in args.input]
     args.input = [os.path.abspath(_) for g in globs for _ in g] #flatten list of glob outputs, and make abspaths
+    if len(args.input) == 0:
+        raise ValueError('No files found.  Have you specified the path/wildcards correctly?')
+    else:
+        print('Will process the following files: {}\n'.format(','.join([os.path.basename(_) for _ in args.input])))
     
     #set outdir defaults, if they were not set in arguments
     if not args.outdir:
@@ -379,7 +386,6 @@ def parse_args():
         z = build_path(True, selected_dir=args.CDR3_dir, default_dir='rawCDR3', outdir=args.outdir) #as above
         args.CDR3_dir = z[0] #update hits_dir with path
         tempdirs.append(z[1]) #if the path is a temporary dir, add it to the list of dirs to remove on cleanup
-
     
     if 'denoise' in args.functions:
         z = build_path(True, selected_dir=args.denoised_dir, default_dir='denoisedCDR3', outdir=args.outdir) #as above
@@ -435,7 +441,6 @@ def main():
                                         dbs = args.dbs,
                                         genedictfile = args.genedict,
                                         db_dir = args.db_dir,
-                                        outdir = args.outdir,
                                         notrim = args.notrim,
                                         adaptertrimmed_dir = args.adaptertrimmed_dir,
                                         hits_dir = args.hits_dir,
@@ -466,44 +471,46 @@ def main():
                                         )
         args.input = call_output #pipe output paths to next function, by overwriting input paths
         
-        if 'denoise' in args.functions:
-            denoise_output = reptools.denoise_filelist(
-                                                    args.input,
-                                                    outdir = args.outdir,
-                                                    FASTQout_dir = args.denoised_dir,
-                                                    subs = args.denoise_substitution,
-                                                    indels = args.denoise_indel,
-                                                    deambig = args.denoise_gene_segments,
-                                                    weight_by_qual = True,
-                                                    threshold = args.threshold,
-                                                    indel_threshold = args.indel_threshold,
-                                                    overwrite = args.overwrite
-                                                  )
-            args.input = denoise_output #pipe output paths to next function, by overwriting input paths
-        
-        if 'EEfilter' in args.functions:
-            EE_output = reptools.EEfilter_filelist(
-                                               args.input,
-                                               outdir = args.outdir,
-                                               FASTQout_dir = args.filtCDR3_dir,
-                                               maxee = args.CDR3maxee,
-                                               overwrite = args.overwrite
+    if 'denoise' in args.functions:
+        print('DENOISING')
+        denoise_output = reptools.denoise_filelist(
+                                                args.input,
+                                                FASTQout_dir = args.denoised_dir,
+                                                subs = args.denoise_substitution,
+                                                indels = args.denoise_indel,
+                                                deambig = args.denoise_gene_segments,
+                                                weight_by_qual = True,
+                                                threshold = args.threshold,
+                                                indel_threshold = args.indel_threshold,
+                                                overwrite = args.overwrite
                                               )
-            args.input = EE_output #pipe output paths to next function, by overwriting input paths
-        
-        if 'VDJtools' in args.functions:
-            reptools.make_VDJtools_filelist(
-                                args.input,
-                                outdir = args.outdir,
-                                VDJout_dir = args.VDJtools_dir,
-                                genes = args.labels,
-                                emptycols = ['D'],
-                                overwrite = args.overwrite
-                                )
-        
-        #remove temporary output files - TODO: put this in an "on exit" function, to handle cleanup on crashes etc.
-        reptools.clean_up_dirs(tempdirs)
+        args.input = denoise_output #pipe output paths to next function, by overwriting input paths
     
+    if 'EEfilter' in args.functions:
+        print('FILTERING BY EXPECTED ERROR RATE')
+        EE_output = reptools.EEfilter_filelist(
+                                           args.input,
+                                           outdir = args.outdir,
+                                           FASTQout_dir = args.filtCDR3_dir,
+                                           maxee = args.CDR3maxee,
+                                           overwrite = args.overwrite
+                                          )
+        args.input = EE_output #pipe output paths to next function, by overwriting input paths
+    
+    if 'VDJtools' in args.functions:
+        print('WRITING VDJ FORMAT FILES')
+        reptools.make_VDJtools_filelist(
+                            args.input,
+                            outdir = args.outdir,
+                            VDJout_dir = args.VDJtools_dir,
+                            genes = args.labels,
+                            emptycols = ['D'],
+                            overwrite = args.overwrite
+                            )
+    
+    #remove temporary output files - TODO: put this in an "on exit" function, to handle cleanup on crashes etc.
+    reptools.clean_up_dirs(tempdirs)
+
 
 if __name__ == '__main__':
     sys.exit(main())
