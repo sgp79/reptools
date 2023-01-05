@@ -1,37 +1,63 @@
-# A sample Python project
+# reptools
 
-A sample project that exists as an aid to the [Python Packaging User
-Guide][packaging guide]'s [Tutorial on Packaging and Distributing
-Projects][distribution tutorial].
+A python package which calls V and J gene segments and extracts CDR3
+sequences from parallel sequencing data (FASTQ files).
 
-This project does not aim to cover best practices for Python project
-development as a whole. For example, it does not provide guidance or tool
-recommendations for version control, documentation, or testing.
+If provided with FASTA files giving V, J and C gene segments, and a CSV file
+pinpointing the start/end of the CDR3 region within V/J segments (as defined by
+the first base of the codon encoding the conserved cysteine residue at the start
+of the CDR3/the first base of  the conserved phenylalanine or tryptophan at the
+end of the CDR3), reptools will call genes and extract the CDR3 sequences.
 
-[The source for this project is available here][src].
+Reptools uses BLASTN to call the C, V and J genes, then Swift-Waterman searches
+(performed by SWIPE) to accurately pinpoint the start and
+end of the CDR3.
 
-Most of the configuration for a Python project is done in the `setup.py` file,
-an example of which is included in this project. You should edit this file
-accordingly to adapt this sample project to your needs.
-
+It is also capable of trimming adapters (by calling bbduk), denoising, and
+filtering by expected error rate, allowing data to be processed in a single call.
 ----
+I developed the first versions of reptools before good tools for repertoire
+calling were widely available, and have continued to use it for my own work
+because (a) it facilitates the use of custom databases (in my case, largely
+chicken TCR), and (b) in our preliminary testing, it outperformed IMGT/Blast
+(significantly) and MiXCR (to a lesser extent) with syntehtic data.  I've yet to
+find the time to explore this properly and publish our results, but hope to do so.
+----
+Reptools requires Python >=3.7, running under Linux (although reptools itself
+should run under Windows, the SWIPE aligner is currently only available for linux,
+so far as I am aware).
 
-This is the README file for the project.
+It requires bbduk for adapter trimming and BLAST+ (specifically, blastn and
+makeblastdb) and SWIPE for calling genes/extracting CDR3.
 
-The file should use UTF-8 encoding and can be written using
-[reStructuredText][rst] or [markdown][md use] with the appropriate [key set][md
-use]. It will be used to generate the project webpage on PyPI and will be
-displayed as the project homepage on common code-hosting services, and should be
-written for that purpose.
+These can either be placed in a location specified in the PATH, or their locations
+can be given at runtime using the --alignerPaths flag.
 
-Typical contents for this file would include an overview of the project, basic
-usage examples, etc. Generally, including the project changelog in here is not a
-good idea, although a simple “What's New” section for the most recent version
-may be appropriate.
+They are currently available at:
+https://jgi.doe.gov/data-and-tools/software-tools/bbtools/
+https://sourceforge.net/projects/bbmap/
 
-[packaging guide]: https://packaging.python.org
-[distribution tutorial]: https://packaging.python.org/en/latest/distributing.html
-[src]: https://github.com/pypa/sampleproject
-[rst]: http://docutils.sourceforge.net/rst.html
-[md]: https://tools.ietf.org/html/rfc7764#section-3.5 "CommonMark variant"
-[md use]: https://packaging.python.org/specifications/core-metadata/#description-content-type-optional
+https://ftp.ncbi.nlm.nih.gov/blast/executables/blast+/LATEST/
+
+https://github.com/torognes/swipe
+----
+Reptools is most easily used as a commandline tool, which as of the most recent
+version (0.17.0) takes an arbitrarily long set of input files and performs one or 
+more of several functions on them: call (call gene segments and extract CDR3),
+denoise (collapses rare sequences into very similar more common ones), EEfilter
+(filters CDR3 sequences by expected error rate (calculated from the FASTQ qual
+string), and VDJtools (outputs a summary in a VDJtools format CSV file).
+
+A call to reptools with default options, performing all functions, might be:
+
+reptools call denoise EEfilter VDJtools -i /path/to/data/*.fastq --adaptors [adaptor
+or primer sequences here, seperated by spaces]
+
+to do the same, but omitting adaptor trimming:
+reptools call denoise EEfilter VDJtools -i /path/to/data/*.fastq --notrim
+----
+Full documentation has not yet been developed, but reptools --help details all
+available options.
+----
+Databases are not yet included on the github: get in touch if you would like me to
+send mouse or chicken TCR databases, or write up the (very simple) format.
